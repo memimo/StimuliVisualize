@@ -1,0 +1,3 @@
+visualization of optimal stimuli
+
+Implementation of http://ai.stanford.edu/~quocle/TCNNweb/algorithm.html in python/theano
