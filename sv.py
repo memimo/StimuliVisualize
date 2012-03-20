@@ -6,7 +6,6 @@ from numpy.linalg import svd
 from video import VideoSink
 
 
-
 def nullspace(A, atol=1e-13, rtol=0):
     """Compute an approximate basis for the nullspace of A.
 
@@ -51,6 +50,7 @@ def nullspace(A, atol=1e-13, rtol=0):
 
 
 def hessian(model, h_indx, data):
+    """ Return the hessian values"""
 
     x = tensor.vector()
     h = theano.gradient.hessian(model.encode(x)[h_indx], x)
@@ -60,13 +60,13 @@ def hessian(model, h_indx, data):
     return fn(data)
 
 
-def activation(model, h_indx, data):
+def activation_fn(model):
+    """ Return the activation function """
 
     x = tensor.vector()
+    return theano.function(inputs = [x], outputs = model.encode(x))
 
-    fn = theano.function(inputs = [x], outputs = model.encode(x)[h_indx])
 
-    return fn(data)
 
 def get_optimal_stimuli(model, hid_indx, img_shape, learning_rate, n_epochs):
     """
@@ -92,8 +92,10 @@ def get_optimal_stimuli(model, hid_indx, img_shape, learning_rate, n_epochs):
     return x_optimal
 
 
-def visualize(model, nhid, image_shape, learning_rate, n_epochs, num_dir = 3, cutoff_percent = 0.2):
+def visualize(model, nhid, image_shape, learning_rate, n_epochs, num_dir = 3, cutoff_percent = 0.7, save_path = '.', f_name = 'network'):
 
+
+    activation = activation_fn(model)
 
     for i in xrange(nhid):
         print "Hidden unit: %d" %(i)
@@ -109,7 +111,7 @@ def visualize(model, nhid, image_shape, learning_rate, n_epochs, num_dir = 3, cu
         order = order[numpy.hstack([numpy.arange(num_dir), numpy.arange(len(order) - num_dir, len(order))])]
         v = numpy.real(v[:,order])
 
-        opt_act = activation(model, i, opt_x)
+        opt_act = activation(opt_x)[i]
         cutoff = cutoff_percent * opt_act
 
         for j in xrange(len(order)):
@@ -118,14 +120,14 @@ def visualize(model, nhid, image_shape, learning_rate, n_epochs, num_dir = 3, cu
             stop = 0
             while start >= numpy.pi / 2:
                 curr_x = opt_x * numpy.cos(start) + numpy.sin(start) * numpy.dot(tangent_basis * v[:,j])
-                curr_act = activation(model, i, curr_x)
+                curr_act = activation(curr_x)[i]
                 if curr_act < cutoff:
                     start = start + numpy.pi / 18
                     break
                 start = start - numpy.pi / 18
             while stop <= numpy.pi / 2:
                 curr_x = opt_x * numpy.cos(stop) + numpy.sin(stop) * numpy.dot(tangent_basis, v[:,j])
-                curr_act = activation(model, i, curr_x)
+                curr_act = activation(curr_x)[i]
                 if curr_act < cutoff:
                     stop = stop - numpy.pi / 18
                     break
@@ -142,25 +144,27 @@ def visualize(model, nhid, image_shape, learning_rate, n_epochs, num_dir = 3, cu
             movie /= movie.max()
             movie = numpy.int8(255 * movie)
 
-            save_movie(movie, j)
+            if j <= num_dir:
+                fname = "%s/%s_unit_%d_eig_high_%d" %(save_path, f_name, i, j)
+            else:
+                fname = "%s/%s_unit_%d_eig_high_%d" %(save_path, f_name, i, j - num_dir)
+            save_movie(movie, image_shape, fname)
 
 
-def save_movie(movie, name):
+def save_movie(movie, image_shape, name):
+    """ Save numpy array as avi movie """
 
-    rate = 40
-    video = VideoSink((28,28), "test", rate=rate, byteorder="bgra")
-    for frame in moive:
+    rate = 5
+    video = VideoSink(size = image_shape, filename = name, rate = rate,  byteorder="y8")
+    for frame in movie:
         video.run(frame)
-
     video.close()
 
 def dummy_test():
 
     image_shape = (28, 28)
     cae = ContractiveAutoencoder(nvis = 28*28, nhid = 10, act_enc = "sigmoid", act_dec = "sigmoid")
-    visualize(cae, 20, image_shape, 0.1, 30)
-    #get_optimal_stimuli(cae, 10, (28, 28), 0.1, 30)
-
+    visualize(cae, nhid = 10, image_shape = image_shape, learning_rate = 0.1, n_epochs = 30, save_path = 'videos')
 
 
 if __name__ == "__main__":

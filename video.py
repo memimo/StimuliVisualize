@@ -5,6 +5,7 @@ class VideoSink(object) :
     credit: https://github.com/vokimon/freenect_python_processing/blob/master/src/videosink.py
     """
     def __init__( self, size, filename="output", rate=1, byteorder="bgra" ) :
+        print byteorder
         self.size = size
         cmdstring  = ('mencoder',
             '/dev/stdin',
