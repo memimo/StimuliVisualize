@@ -1,3 +1,5 @@
+import argparse
+import pickle
 import numpy
 import theano
 from theano import tensor
@@ -48,9 +50,26 @@ def nullspace(A, atol=1e-13, rtol=0):
     ns = vh[nnz:].conj().T
     return ns
 
+def norm(x):
+
+    x -= x.min()
+    max_val = x.max()
+    if max_val == 0:
+        max_val = 0.000001
+    x /= max_val
+
+    return x
 
 def hessian(model, h_indx, data):
-    """ Return the hessian values"""
+    """
+    Return the hessian values
+
+    Parameters
+    ----------
+    model : model object
+    h_indx : Index of the unit
+    data : data array
+    """
 
     x = tensor.vector()
     h = theano.gradient.hessian(model.encode(x)[h_indx], x)
@@ -61,16 +80,31 @@ def hessian(model, h_indx, data):
 
 
 def activation_fn(model):
-    """ Return the activation function """
+    """
+    Return the activation function
+    """
 
     x = tensor.vector()
     return theano.function(inputs = [x], outputs = model.encode(x))
 
+#def activation_fn(model):
 
+    #x = tensor.vector()
+    #j = theano.gradient.grad(mode.encode(x)[h_ind])
 
 def get_optimal_stimuli(model, hid_indx, img_shape, learning_rate, n_epochs):
     """
-    Find the stimlui that maximazie each hidden unit activation
+    Find the stimlui that maximazie each hidden unit activation, use sgd
+    to find the optimal value starting from unit sphere
+
+    Parameters
+    ----------
+
+    model : model object
+    hid_indx : unit index
+    img_shaoe : Image shape
+    learning_rate : SGD learning rate
+    n_epochs : SGD number of epochs
     """
 
     inputs = theano.shared(numpy.ones(numpy.prod(img_shape), dtype = theano.config.floatX))
@@ -86,13 +120,20 @@ def get_optimal_stimuli(model, hid_indx, img_shape, learning_rate, n_epochs):
         print "\tepoch %d, activation: %f " %(epoch, res)
 
     x_optimal = inputs.get_value()
-    x_optimal -= x_optimal.min()
-    x_optimal /= x_optimal.max()
+    x_optimal = norm(x_optimal)
 
     return x_optimal
 
 
-def visualize(model, nhid, image_shape, learning_rate, n_epochs, num_dir = 3, cutoff_percent = 0.7, save_path = '.', f_name = 'network'):
+def visualize(model,
+                nhid,
+                image_shape,
+                learning_rate,
+                n_epochs,
+                num_dir = 3,
+                cutoff_percent = 0.7,
+                save_path = '.',
+                f_name = 'network'):
 
 
     activation = activation_fn(model)
@@ -104,7 +145,6 @@ def visualize(model, nhid, image_shape, learning_rate, n_epochs, num_dir = 3, cu
         tangent_basis = nullspace(opt_x.T)
         h = hessian(model, i, opt_x)
         h = numpy.dot(tangent_basis.T, numpy.dot(h, tangent_basis))
-
         d, v = numpy.linalg.eig(h)
         test = numpy.real(d)
         order = numpy.argsort(-test)
@@ -116,32 +156,29 @@ def visualize(model, nhid, image_shape, learning_rate, n_epochs, num_dir = 3, cu
 
         for j in xrange(len(order)):
             movie = []
-            start = 0
-            stop = 0
-            while start >= numpy.pi / 2:
-                curr_x = opt_x * numpy.cos(start) + numpy.sin(start) * numpy.dot(tangent_basis * v[:,j])
+            start = 0.
+            stop = 0.
+            while start >= -numpy.pi / 2.:
+                curr_x = opt_x * numpy.cos(start) + numpy.sin(start) * numpy.dot(tangent_basis, v[:,j])
                 curr_act = activation(curr_x)[i]
                 if curr_act < cutoff:
-                    start = start + numpy.pi / 18
+                    start += numpy.pi / 18.
                     break
-                start = start - numpy.pi / 18
-            while stop <= numpy.pi / 2:
+                start -= numpy.pi / 18.
+            while stop <= numpy.pi / 2.:
                 curr_x = opt_x * numpy.cos(stop) + numpy.sin(stop) * numpy.dot(tangent_basis, v[:,j])
                 curr_act = activation(curr_x)[i]
                 if curr_act < cutoff:
-                    stop = stop - numpy.pi / 18
+                    stop -= numpy.pi / 18.
                     break
-                stop = stop + numpy.pi / 18
+                stop += numpy.pi / 18.
 
-            counter = 0
             for t in numpy.arange(start, stop, numpy.pi / 36):
                 curr_x = opt_x * numpy.cos(t) + numpy.sin(t) * numpy.dot(tangent_basis, v[:, j])
                 movie.append(curr_x.reshape(image_shape))
-                counter += 1
 
             movie = numpy.asarray(movie)
-            movie -= movie.min()
-            movie /= movie.max()
+            movie = norm(movie)
             movie = numpy.int8(255 * movie)
 
             if j <= num_dir:
@@ -153,12 +190,20 @@ def visualize(model, nhid, image_shape, learning_rate, n_epochs, num_dir = 3, cu
 
 def save_movie(movie, image_shape, name):
     """ Save numpy array as avi movie """
-
     rate = 5
     video = VideoSink(size = image_shape, filename = name, rate = rate,  byteorder="y8")
     for frame in movie:
         video.run(frame)
     video.close()
+
+def load_model(data_path):
+    """
+    loads model and return it with number if hidden units
+    """
+
+    data = pickle.load(open(data_path, 'r'))
+
+    return data, data.nhid
 
 def dummy_test():
 
@@ -168,4 +213,35 @@ def dummy_test():
 
 
 if __name__ == "__main__":
-    dummy_test()
+
+    parser = argparse.ArgumentParser(description = "Visualize stimuli's")
+    parser.add_argument('-m', '--model', help = 'path to model file',
+            required = True)
+    parser.add_argument('-o', '--output', help = 'path to save videos',
+            default = 'videos/')
+    parser.add_argument('-n', '--name', default = 'test', help = 'experiment name')
+    parser.add_argument('-W', '--width', help = 'image width',
+            required = True, type = int)
+    parser.add_argument('-H', '--height', help = 'image height',
+            required = True, type = int)
+    parser.add_argument('-l', '--learning_rate', help = "learning rate",
+            default = 0.1, type = float)
+    parser.add_argument('-e', '--epochs', help = "number of epochs",
+            default = 30, type = int)
+    parser.add_argument('-d', '--directions', help = "number of directions",
+            default = 3, type = int)
+    parser.add_argument('-c', '--cutoff', help = "cutoff percent",
+            default = 0.7, type = float)
+    args = parser.parse_args()
+
+    model, nhid = load_model(args.model)
+
+    visualize(model, nhid = nhid,
+            image_shape = (args.width, args.height),
+            learning_rate = args.learning_rate,
+            n_epochs = args.epochs,
+            save_path = args.output,
+            f_name = args.name)
+
+
+    #dummy_test()
