@@ -79,18 +79,15 @@ def hessian(model, h_indx, data):
     return fn(data)
 
 
-def activation_fn(model):
-    """
-    Return the activation function
-    """
+
+def grad_activation(model, h_indx, data):
 
     x = tensor.vector()
-    return theano.function(inputs = [x], outputs = model.encode(x))
+    j = theano.gradient.Rop(model.encode(x)[h_indx], x, x)
 
-#def activation_fn(model):
+    fn = theano.function(inputs = [x], outputs = j)
 
-    #x = tensor.vector()
-    #j = theano.gradient.grad(mode.encode(x)[h_ind])
+    return fn(data)
 
 def get_optimal_stimuli(model, hid_indx, img_shape, learning_rate, n_epochs):
     """
@@ -136,7 +133,6 @@ def visualize(model,
                 f_name = 'network'):
 
 
-    activation = activation_fn(model)
 
     for i in xrange(nhid):
         print "Hidden unit: %d" %(i)
@@ -150,8 +146,7 @@ def visualize(model,
         order = numpy.argsort(-test)
         order = order[numpy.hstack([numpy.arange(num_dir), numpy.arange(len(order) - num_dir, len(order))])]
         v = numpy.real(v[:,order])
-
-        opt_act = activation(opt_x)[i]
+        opt_act = grad_activation(model, i, opt_x)
         cutoff = cutoff_percent * opt_act
 
         for j in xrange(len(order)):
@@ -160,14 +155,14 @@ def visualize(model,
             stop = 0.
             while start >= -numpy.pi / 2.:
                 curr_x = opt_x * numpy.cos(start) + numpy.sin(start) * numpy.dot(tangent_basis, v[:,j])
-                curr_act = activation(curr_x)[i]
+                curr_act = grad_activation(model, i, curr_x)
                 if curr_act < cutoff:
                     start += numpy.pi / 18.
                     break
                 start -= numpy.pi / 18.
             while stop <= numpy.pi / 2.:
                 curr_x = opt_x * numpy.cos(stop) + numpy.sin(stop) * numpy.dot(tangent_basis, v[:,j])
-                curr_act = activation(curr_x)[i]
+                curr_act = grad_activation(model, i, curr_x)
                 if curr_act < cutoff:
                     stop -= numpy.pi / 18.
                     break
@@ -176,6 +171,9 @@ def visualize(model,
             for t in numpy.arange(start, stop, numpy.pi / 36):
                 curr_x = opt_x * numpy.cos(t) + numpy.sin(t) * numpy.dot(tangent_basis, v[:, j])
                 movie.append(curr_x.reshape(image_shape))
+
+            if len(movie) == 0:
+                break
 
             movie = numpy.asarray(movie)
             movie = norm(movie)
